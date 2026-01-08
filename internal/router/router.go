@@ -2,15 +2,134 @@ package router
 
 import (
 	"fmt"
+	"sync"
 	"strings"
 
 	"github.com/openmux/openmux/internal/config"
 	"github.com/openmux/openmux/pkg/errors"
 )
 
+// TargetSelector 目标选择器接口
+type TargetSelector interface {
+	// Select 根据策略选择一个目标
+	Select() (*config.Target, error)
+	// GetAll 获取所有目标（用于重试）
+	GetAll() []config.Target
+}
+
+// WeightedTargetSelector 加权目标选择器
+type WeightedTargetSelector struct {
+	mu            sync.Mutex
+	targets       []config.Target
+	current       int
+	gcd           int
+	maxWeight     int
+	currentWeight int
+}
+
+// NewWeightedTargetSelector 创建加权目标选择器
+func NewWeightedTargetSelector(targets []config.Target) *WeightedTargetSelector {
+	if len(targets) == 0 {
+		return &WeightedTargetSelector{}
+	}
+
+	weights := make([]int, 0, len(targets))
+	for _, target := range targets {
+		weight := target.Weight
+		if weight <= 0 {
+			weight = 1
+		}
+		weights = append(weights, weight)
+	}
+
+	gcd := gcdSlice(weights)
+	maxWeight := maxSlice(weights)
+
+	return &WeightedTargetSelector{
+		targets:       targets,
+		current:       -1,
+		gcd:           gcd,
+		maxWeight:     maxWeight,
+		currentWeight: 0,
+	}
+}
+
+// Select 选择一个目标
+func (w *WeightedTargetSelector) Select() (*config.Target, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if len(w.targets) == 0 {
+		return nil, errors.New(errors.ErrCodeNoAvailableBackend, "no targets available")
+	}
+
+	// 加权轮询算法
+	for i := 0; i < len(w.targets)*w.maxWeight; i++ {
+		w.current = (w.current + 1) % len(w.targets)
+
+		if w.current == 0 {
+			w.currentWeight -= w.gcd
+			if w.currentWeight <= 0 {
+				w.currentWeight = w.maxWeight
+			}
+		}
+
+		target := &w.targets[w.current]
+		if target.Weight >= w.currentWeight {
+			return target, nil
+		}
+	}
+
+	// 如果所有目标权重都不满足，返回第一个
+	return &w.targets[0], nil
+}
+
+// GetAll 获取所有目标
+func (w *WeightedTargetSelector) GetAll() []config.Target {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	result := make([]config.Target, len(w.targets))
+	copy(result, w.targets)
+	return result
+}
+
+// gcd 计算最大公约数
+func gcd(a, b int) int {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
+}
+
+// gcdSlice 计算切片的最大公约数
+func gcdSlice(nums []int) int {
+	if len(nums) == 0 {
+		return 1
+	}
+	result := nums[0]
+	for i := 1; i < len(nums); i++ {
+		result = gcd(result, nums[i])
+	}
+	return result
+}
+
+// maxSlice 获取切片最大值
+func maxSlice(nums []int) int {
+	if len(nums) == 0 {
+		return 0
+	}
+	max := nums[0]
+	for _, n := range nums[1:] {
+		if n > max {
+			max = n
+		}
+	}
+	return max
+}
+
 // Router 模型路由器
 type Router struct {
-	routes            map[string]config.ModelRoute
+	routes            map[string]TargetSelector
 	passthrough       bool
 	allowedProviders  map[string]bool
 	providers         map[string]bool
@@ -30,19 +149,33 @@ func NewRouter(cfg *config.Config) *Router {
 		providers[name] = true
 	}
 	
+	// 为每个路由创建选择器
+	routes := make(map[string]TargetSelector)
+	for name, route := range cfg.ModelRoutes {
+		var selector TargetSelector
+		switch route.Strategy {
+		case "weighted_round_robin", "":
+			selector = NewWeightedTargetSelector(route.Targets)
+		default:
+			// 默认使用加权轮询
+			selector = NewWeightedTargetSelector(route.Targets)
+		}
+		routes[name] = selector
+	}
+	
 	return &Router{
-		routes:           cfg.ModelRoutes,
+		routes:           routes,
 		passthrough:      cfg.Passthrough.Enabled,
 		allowedProviders: allowedProviders,
 		providers:        providers,
 	}
 }
 
-// Route 路由模型请求
-func (r *Router) Route(modelName string) ([]config.Target, error) {
+// Route 路由模型请求，返回目标选择器
+func (r *Router) Route(modelName string) (TargetSelector, error) {
 	// 1. 优先匹配自定义别名
-	if route, ok := r.routes[modelName]; ok {
-		return route.Targets, nil
+	if selector, ok := r.routes[modelName]; ok {
+		return selector, nil
 	}
 	
 	// 2. 尝试解析 provider/model 格式
@@ -61,11 +194,12 @@ func (r *Router) Route(modelName string) ([]config.Target, error) {
 					fmt.Sprintf("provider not allowed: %s", provider))
 			}
 			
-			return []config.Target{{
+			// 返回单个目标的选择器
+			return NewWeightedTargetSelector([]config.Target{{
 				Provider: provider,
 				Model:    model,
 				Weight:   1,
-			}}, nil
+			}}), nil
 		}
 	}
 	
@@ -80,6 +214,15 @@ func (r *Router) ListModels() []string {
 		models = append(models, name)
 	}
 	return models
+}
+
+// RouteTargets 路由模型请求，返回所有目标（用于兼容旧代码）
+func (r *Router) RouteTargets(modelName string) ([]config.Target, error) {
+	selector, err := r.Route(modelName)
+	if err != nil {
+		return nil, err
+	}
+	return selector.GetAll(), nil
 }
 
 // parseProviderModel 解析 provider/model 格式

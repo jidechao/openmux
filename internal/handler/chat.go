@@ -50,7 +50,7 @@ func (h *ChatHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 路由模型
-	targets, err := h.router.Route(req.Model)
+	targetSelector, err := h.router.Route(req.Model)
 	if err != nil {
 		if e, ok := err.(*errors.Error); ok {
 			writeError(w, http.StatusNotFound, string(e.Code), e.Message)
@@ -62,9 +62,9 @@ func (h *ChatHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	// 处理请求
 	if req.Stream {
-		h.handleStream(w, r, &req, targets)
+		h.handleStream(w, r, &req, targetSelector)
 	} else {
-		h.handleNonStream(w, r, &req, targets)
+		h.handleNonStream(w, r, &req, targetSelector)
 	}
 }
 
@@ -73,9 +73,9 @@ func (h *ChatHandler) handleNonStream(
 	w http.ResponseWriter,
 	r *http.Request,
 	req *openai.ChatCompletionRequest,
-	targets []config.Target,
+	targetSelector router.TargetSelector,
 ) {
-	resp, err := h.handleWithRetry(r.Context(), req, targets)
+	resp, err := h.handleWithRetry(r.Context(), req, targetSelector)
 	if err != nil {
 		if e, ok := err.(*errors.Error); ok {
 			writeError(w, http.StatusInternalServerError, string(e.Code), e.Message)
@@ -94,7 +94,7 @@ func (h *ChatHandler) handleStream(
 	w http.ResponseWriter,
 	r *http.Request,
 	req *openai.ChatCompletionRequest,
-	targets []config.Target,
+	targetSelector router.TargetSelector,
 ) {
 	// 设置 SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -107,40 +107,63 @@ func (h *ChatHandler) handleStream(
 		return
 	}
 
-	// 尝试每个 target
+	// 获取所有目标用于重试
+	allTargets := targetSelector.GetAll()
 	var lastErr error
-	for _, target := range targets {
-		backend, err := h.selectBackend(target.Provider)
-		if err != nil {
-			lastErr = err
-			continue
+	
+	// 首先尝试使用加权选择器选择目标
+	target, err := targetSelector.Select()
+	if err == nil {
+		if err := h.tryStreamTarget(w, r, req, flusher, target); err == nil {
+			return
 		}
-		defer func(providerName string, b *balancer.Backend) {
-			if bal, _ := h.balancerPool.Get(providerName); bal != nil {
-				bal.Release(b)
-			}
-		}(target.Provider, backend)
+		lastErr = err
+	}
 
-		prov, err := h.providerPool.Get(target.Provider)
-		if err != nil {
-			lastErr = err
-			continue
+	// 如果加权选择失败，尝试所有目标（用于重试）
+	for _, target := range allTargets {
+		if err := h.tryStreamTarget(w, r, req, flusher, &target); err == nil {
+			return
 		}
-
-		streamResp, err := prov.ChatCompletionStream(r.Context(), req, target.Model, backend.APIKey.Key)
-		if err != nil {
-			h.markBackendUnhealthy(target.Provider, backend)
-			lastErr = err
-			continue
-		}
-
-		// 转发流式响应
-		h.forwardStream(w, flusher, streamResp)
-		return
+		lastErr = err
 	}
 
 	// 所有 target 都失败
 	writeSSEError(w, flusher, "provider_error", fmt.Sprintf("All targets failed: %v", lastErr))
+}
+
+// tryStreamTarget 尝试使用指定目标处理流式请求
+func (h *ChatHandler) tryStreamTarget(
+	w http.ResponseWriter,
+	r *http.Request,
+	req *openai.ChatCompletionRequest,
+	flusher http.Flusher,
+	target *config.Target,
+) error {
+	backend, err := h.selectBackend(target.Provider)
+	if err != nil {
+		return err
+	}
+	defer func(providerName string, b *balancer.Backend) {
+		if bal, _ := h.balancerPool.Get(providerName); bal != nil {
+			bal.Release(b)
+		}
+	}(target.Provider, backend)
+
+	prov, err := h.providerPool.Get(target.Provider)
+	if err != nil {
+		return err
+	}
+
+	streamResp, err := prov.ChatCompletionStream(r.Context(), req, target.Model, backend.APIKey.Key)
+	if err != nil {
+		h.markBackendUnhealthy(target.Provider, backend)
+		return err
+	}
+
+	// 转发流式响应
+	h.forwardStream(w, flusher, streamResp)
+	return nil
 }
 
 // forwardStream 转发流式响应
@@ -175,37 +198,29 @@ func (h *ChatHandler) forwardStream(w http.ResponseWriter, flusher http.Flusher,
 func (h *ChatHandler) handleWithRetry(
 	ctx context.Context,
 	req *openai.ChatCompletionRequest,
-	targets []config.Target,
+	targetSelector router.TargetSelector,
 ) (*openai.ChatCompletionResponse, error) {
 	var lastErr error
 
-	for _, target := range targets {
-		backend, err := h.selectBackend(target.Provider)
-		if err != nil {
-			lastErr = err
-			continue
+	// 首先尝试使用加权选择器选择目标
+	target, err := targetSelector.Select()
+	if err == nil {
+		if resp, err := h.tryTarget(ctx, req, target); err == nil {
+			return resp, nil
 		}
+		lastErr = err
+	}
 
-		prov, err := h.providerPool.Get(target.Provider)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		resp, err := prov.ChatCompletion(ctx, req, target.Model, backend.APIKey.Key)
-
-		// 释放连接
-		if bal, _ := h.balancerPool.Get(target.Provider); bal != nil {
-			bal.Release(backend)
-		}
-
+	// 如果加权选择失败，尝试所有目标（用于重试）
+	allTargets := targetSelector.GetAll()
+	for _, target := range allTargets {
+		resp, err := h.tryTarget(ctx, req, &target)
 		if err == nil {
 			return resp, nil
 		}
 
 		// 处理错误
 		if errors.IsRateLimitError(err) {
-			h.markBackendUnhealthy(target.Provider, backend)
 			lastErr = err
 			continue
 		}
@@ -220,6 +235,39 @@ func (h *ChatHandler) handleWithRetry(
 	}
 
 	return nil, errors.Wrap(errors.ErrCodeProviderError, "all targets failed", lastErr)
+}
+
+// tryTarget 尝试使用指定目标处理请求
+func (h *ChatHandler) tryTarget(
+	ctx context.Context,
+	req *openai.ChatCompletionRequest,
+	target *config.Target,
+) (*openai.ChatCompletionResponse, error) {
+	backend, err := h.selectBackend(target.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	prov, err := h.providerPool.Get(target.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := prov.ChatCompletion(ctx, req, target.Model, backend.APIKey.Key)
+
+	// 释放连接
+	if bal, _ := h.balancerPool.Get(target.Provider); bal != nil {
+		bal.Release(backend)
+	}
+
+	if err != nil {
+		if errors.IsRateLimitError(err) {
+			h.markBackendUnhealthy(target.Provider, backend)
+		}
+		return nil, err
+	}
+
+	return resp, nil
 }
 
 // selectBackend 选择后端

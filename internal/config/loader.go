@@ -5,11 +5,16 @@ import (
 	"os"
 	"strings"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
 // Load 加载配置文件
 func Load(path string) (*Config, error) {
+	// 加载 .env 文件（如果存在）
+	// 忽略错误，因为 .env 文件是可选的
+	_ = godotenv.Load()
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)

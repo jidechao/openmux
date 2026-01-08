@@ -37,18 +37,18 @@ func TestTokenBucket(t *testing.T) {
 func TestMultiLimiter(t *testing.T) {
 	limiter := NewMultiLimiter(60, 1000)
 
-	// 第一个请求应该通过
-	if !limiter.Allow() {
+	// 第一个请求应该通过 (Reserve 0 tokens also checks RPM)
+	if !limiter.Reserve(0) {
 		t.Error("First request should be allowed")
 	}
 
 	// 测试 token 限流
-	if !limiter.AllowTokens(100) {
+	if !limiter.Reserve(100) {
 		t.Error("Should allow 100 tokens")
 	}
 
 	// 超过限制应该被拒绝
-	if limiter.AllowTokens(10000) {
+	if limiter.Reserve(10000) {
 		t.Error("Should not allow 10000 tokens")
 	}
 }

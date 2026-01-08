@@ -4,6 +4,7 @@ import (
 	"sync/atomic"
 
 	"github.com/openmux/openmux/internal/config"
+	"github.com/openmux/openmux/internal/ratelimit"
 )
 
 // Backend 后端实例
@@ -11,6 +12,7 @@ type Backend struct {
 	Provider    string
 	APIKey      string
 	RateLimit   config.RateLimit
+	Limiter     *ratelimit.MultiLimiter
 	Weight      int
 	Healthy     bool
 	ActiveConns int32
@@ -20,10 +22,10 @@ type Backend struct {
 // Balancer 负载均衡器接口
 type Balancer interface {
 	// Select 选择一个后端
-	Select() (*Backend, error)
+	Select(estimatedTokens int) (*Backend, error)
 	
 	// Release 释放后端连接
-	Release(backend *Backend)
+	Release(backend *Backend, usedTokens, estimatedTokens int)
 	
 	// MarkUnhealthy 标记后端不健康
 	MarkUnhealthy(backend *Backend)
@@ -36,7 +38,7 @@ type Balancer interface {
 }
 
 // AcquireConn 获取连接
-func (b *Backend) AcquireConn() bool {
+func (b *Backend) AcquireConn(estimatedTokens int) bool {
 	if !b.Healthy {
 		return false
 	}
@@ -46,13 +48,24 @@ func (b *Backend) AcquireConn() bool {
 			return false
 		}
 	}
+	
+	// 检查限流 (RPM/TPM)
+	if b.Limiter != nil {
+		if !b.Limiter.Reserve(estimatedTokens) {
+			return false
+		}
+	}
+	
 	atomic.AddInt32(&b.ActiveConns, 1)
 	return true
 }
 
 // ReleaseConn 释放连接
-func (b *Backend) ReleaseConn() {
+func (b *Backend) ReleaseConn(usedTokens, estimatedTokens int) {
 	atomic.AddInt32(&b.ActiveConns, -1)
+	if b.Limiter != nil {
+		b.Limiter.Update(usedTokens, estimatedTokens)
+	}
 }
 
 // IncrFailCount 增加失败计数

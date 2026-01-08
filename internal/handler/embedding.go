@@ -112,15 +112,16 @@ func (h *EmbeddingHandler) tryTarget(
 	req *pkgopenai.EmbeddingRequest,
 	target *config.Target,
 ) (*openai.CreateEmbeddingResponse, error) {
-	backend, err := h.selectBackend(target.Provider)
+	estimatedTokens := h.estimateTokens(req)
+	backend, err := h.selectBackend(target.Provider, estimatedTokens)
 	if err != nil {
 		return nil, err
 	}
-	defer func(providerName string, b *balancer.Backend) {
-		if bal, _ := h.balancerPool.Get(providerName); bal != nil {
-			bal.Release(b)
-		}
-	}(target.Provider, backend)
+	
+	actualUsage := 0
+	defer func() {
+		h.releaseBackend(target.Provider, backend, actualUsage, estimatedTokens)
+	}()
 
 	prov, err := h.providerPool.Get(target.Provider)
 	if err != nil {
@@ -128,6 +129,10 @@ func (h *EmbeddingHandler) tryTarget(
 	}
 
 	resp, err := prov.CreateEmbedding(ctx, req, target.Model, backend.APIKey)
+
+	if resp != nil {
+		actualUsage = int(resp.Usage.TotalTokens)
+	}
 
 	if err != nil {
 		if errors.IsRateLimitError(err) {
@@ -139,16 +144,40 @@ func (h *EmbeddingHandler) tryTarget(
 	return resp, nil
 }
 
-func (h *EmbeddingHandler) selectBackend(providerName string) (*balancer.Backend, error) {
+func (h *EmbeddingHandler) selectBackend(providerName string, estimatedTokens int) (*balancer.Backend, error) {
 	bal, err := h.balancerPool.Get(providerName)
 	if err != nil {
 		return nil, err
 	}
-	return bal.Select()
+	return bal.Select(estimatedTokens)
+}
+
+func (h *EmbeddingHandler) releaseBackend(providerName string, backend *balancer.Backend, actualUsage, estimatedTokens int) {
+	if bal, err := h.balancerPool.Get(providerName); err == nil {
+		bal.Release(backend, actualUsage, estimatedTokens)
+	}
 }
 
 func (h *EmbeddingHandler) markBackendUnhealthy(providerName string, backend *balancer.Backend) {
 	if bal, err := h.balancerPool.Get(providerName); err == nil {
 		bal.MarkUnhealthy(backend)
+	}
+}
+
+func (h *EmbeddingHandler) estimateTokens(req *pkgopenai.EmbeddingRequest) int {
+	// 简单估算
+	switch v := req.Input.(type) {
+	case string:
+		return len(v) / 4
+	case []interface{}:
+		count := 0
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				count += len(s)
+			}
+		}
+		return count / 4
+	default:
+		return 100 // 默认值
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/openmux/openmux/internal/config"
+	"github.com/openmux/openmux/internal/ratelimit"
 	"github.com/openmux/openmux/pkg/errors"
 )
 
@@ -33,6 +34,7 @@ func NewWeightedRoundRobin(provider string, apiKeys []string, rateLimit config.R
 			Provider:  provider,
 			APIKey:    key,
 			RateLimit: rateLimit,
+			Limiter:   ratelimit.NewMultiLimiter(rateLimit.RPM, rateLimit.TPM),
 			Weight:    weight,
 			Healthy:   true,
 		})
@@ -52,7 +54,7 @@ func NewWeightedRoundRobin(provider string, apiKeys []string, rateLimit config.R
 }
 
 // Select 选择一个后端
-func (w *WeightedRoundRobin) Select() (*Backend, error) {
+func (w *WeightedRoundRobin) Select(estimatedTokens int) (*Backend, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	
@@ -72,7 +74,7 @@ func (w *WeightedRoundRobin) Select() (*Backend, error) {
 		}
 		
 		backend := w.backends[w.current]
-		if backend.Weight >= w.currentWeight && backend.AcquireConn() {
+		if backend.Weight >= w.currentWeight && backend.AcquireConn(estimatedTokens) {
 			return backend, nil
 		}
 	}
@@ -81,8 +83,8 @@ func (w *WeightedRoundRobin) Select() (*Backend, error) {
 }
 
 // Release 释放后端连接
-func (w *WeightedRoundRobin) Release(backend *Backend) {
-	backend.ReleaseConn()
+func (w *WeightedRoundRobin) Release(backend *Backend, usedTokens, estimatedTokens int) {
+	backend.ReleaseConn(usedTokens, estimatedTokens)
 }
 
 // MarkUnhealthy 标记后端不健康

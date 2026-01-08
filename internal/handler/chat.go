@@ -140,15 +140,18 @@ func (h *ChatHandler) tryStreamTarget(
 	flusher http.Flusher,
 	target *config.Target,
 ) error {
-	backend, err := h.selectBackend(target.Provider)
+	estimatedTokens := h.estimateTokens(req)
+	backend, err := h.selectBackend(target.Provider, estimatedTokens)
 	if err != nil {
 		return err
 	}
-	defer func(providerName string, b *balancer.Backend) {
-		if bal, _ := h.balancerPool.Get(providerName); bal != nil {
-			bal.Release(b)
+	
+	actualUsage := 0
+	defer func() {
+		if bal, _ := h.balancerPool.Get(target.Provider); bal != nil {
+			bal.Release(backend, actualUsage, estimatedTokens)
 		}
-	}(target.Provider, backend)
+	}()
 
 	prov, err := h.providerPool.Get(target.Provider)
 	if err != nil {
@@ -162,18 +165,34 @@ func (h *ChatHandler) tryStreamTarget(
 	}
 
 	// 转发流式响应
-	h.forwardStream(w, flusher, streamResp)
+	usage, err := h.forwardStream(w, flusher, streamResp)
+	if usage > 0 {
+		actualUsage = usage
+	} else {
+		// 如果没有返回 Usage，则只能使用估算值
+		// 或者我们可以在 forwardStream 中累加 output tokens
+		// 这里暂且使用 estimatedTokens + usage (output) 如果 input usage 未知
+		// 为了简单，如果 usage 为 0，actualUsage = estimatedTokens (input) + output_tokens (counted in forwardStream)
+		// forwardStream 返回的 usage 应该是 totalTokens
+		actualUsage = estimatedTokens
+	}
 	return nil
 }
 
 // forwardStream 转发流式响应
-func (h *ChatHandler) forwardStream(w http.ResponseWriter, flusher http.Flusher, streamResp *provider.StreamResponse) {
+func (h *ChatHandler) forwardStream(w http.ResponseWriter, flusher http.Flusher, streamResp *provider.StreamResponse) (int, error) {
 	stream := streamResp.Stream
 	defer stream.Close()
+
+	totalUsage := 0
 
 	for stream.Next() {
 		chunk := stream.Current()
 		
+		if chunk.Usage.TotalTokens > 0 {
+			totalUsage = int(chunk.Usage.TotalTokens)
+		}
+
 		data, err := json.Marshal(chunk)
 		if err != nil {
 			continue
@@ -185,11 +204,13 @@ func (h *ChatHandler) forwardStream(w http.ResponseWriter, flusher http.Flusher,
 
 	if err := stream.Err(); err != nil {
 		writeSSEError(w, flusher, "stream_error", err.Error())
-		return
+		return totalUsage, err
 	}
 
 	fmt.Fprintf(w, "data: [DONE]\n\n")
 	flusher.Flush()
+	
+	return totalUsage, nil
 }
 
 // handleWithRetry 带重试的请求处理
@@ -241,22 +262,28 @@ func (h *ChatHandler) tryTarget(
 	req *pkgopenai.ChatCompletionRequest,
 	target *config.Target,
 ) (*openai.ChatCompletion, error) {
-	backend, err := h.selectBackend(target.Provider)
+	estimatedTokens := h.estimateTokens(req)
+	backend, err := h.selectBackend(target.Provider, estimatedTokens)
 	if err != nil {
 		return nil, err
 	}
 
 	prov, err := h.providerPool.Get(target.Provider)
 	if err != nil {
+		// 释放连接 (没有 usage)
+		h.releaseBackend(target.Provider, backend, 0, estimatedTokens)
 		return nil, err
 	}
 
 	resp, err := prov.ChatCompletion(ctx, req, target.Model, backend.APIKey)
+	
+	actualUsage := 0
+	if resp != nil {
+		actualUsage = int(resp.Usage.TotalTokens)
+	}
 
 	// 释放连接
-	if bal, _ := h.balancerPool.Get(target.Provider); bal != nil {
-		bal.Release(backend)
-	}
+	h.releaseBackend(target.Provider, backend, actualUsage, estimatedTokens)
 
 	if err != nil {
 		if errors.IsRateLimitError(err) {
@@ -269,12 +296,18 @@ func (h *ChatHandler) tryTarget(
 }
 
 // selectBackend 选择后端
-func (h *ChatHandler) selectBackend(providerName string) (*balancer.Backend, error) {
+func (h *ChatHandler) selectBackend(providerName string, estimatedTokens int) (*balancer.Backend, error) {
 	bal, err := h.balancerPool.Get(providerName)
 	if err != nil {
 		return nil, err
 	}
-	return bal.Select()
+	return bal.Select(estimatedTokens)
+}
+
+func (h *ChatHandler) releaseBackend(providerName string, backend *balancer.Backend, actualUsage, estimatedTokens int) {
+	if bal, err := h.balancerPool.Get(providerName); err == nil {
+		bal.Release(backend, actualUsage, estimatedTokens)
+	}
 }
 
 // markBackendUnhealthy 标记后端不健康
@@ -282,6 +315,17 @@ func (h *ChatHandler) markBackendUnhealthy(providerName string, backend *balance
 	if bal, err := h.balancerPool.Get(providerName); err == nil {
 		bal.MarkUnhealthy(backend)
 	}
+}
+
+// estimateTokens 估算 token 数
+func (h *ChatHandler) estimateTokens(req *pkgopenai.ChatCompletionRequest) int {
+	chars := 0
+	for _, msg := range req.Messages {
+		chars += len(msg.Content)
+	}
+	// 简单估算: char/4 + overhead + output buffer
+	// 假设平均 output 是 100 token
+	return chars/4 + len(req.Messages)*10 + 100
 }
 
 // writeError 写入错误响应

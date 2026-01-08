@@ -6,19 +6,6 @@ bin/
 *.so
 *.dylib
 
-# Test binary
-*.test
-
-# Output of the go coverage tool
-*.out
-
-# Go workspace file
-go.work
-
-# Config files
-config.yaml
-.env
-
 # IDE
 .vscode/
 .idea/
@@ -29,3 +16,26 @@ config.yaml
 # OS
 .DS_Store
 Thumbs.db
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Editor/IDE
+.idea/
+.vscode/
+
+# Config files
+config.yaml
+.env

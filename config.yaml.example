@@ -34,66 +34,44 @@ providers:
     retry:
       max_attempts: 3
       backoff: "exponential"
+    rate_limit:
+      rpm: 100
+      tpm: 50000
+      concurrent: 10
     api_keys:
-      - key: "${ZHIPU_KEY_1}"
-        name: "zhipu-key-1"
-        rate_limit:
-          rpm: 100
-          tpm: 50000
-          concurrent: 10
-        weight: 1
-        enabled: true
-      - key: "${ZHIPU_KEY_2}"
-        name: "zhipu-key-2"
-        rate_limit:
-          rpm: 100
-          tpm: 50000
-          concurrent: 10
-        weight: 1
-        enabled: true
+      - "${ZHIPU_KEY_1}"
+      - "${ZHIPU_KEY_2}"
 
   aliyun:
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
     type: "openai"
     timeout: 60s
+    rate_limit:
+      rpm: 200
+      tpm: 100000
+      concurrent: 20
     api_keys:
-      - key: "${ALIYUN_KEY_1}"
-        name: "aliyun-key-1"
-        rate_limit:
-          rpm: 200
-          tpm: 100000
-          concurrent: 20
-        weight: 2
-        enabled: true
+      - "${ALIYUN_KEY_1}"
 
   deepseek:
     base_url: "https://api.deepseek.com/v1"
     type: "openai"
     timeout: 60s
+    rate_limit:
+      rpm: 200
+      tpm: 100000
+      concurrent: 20
     api_keys:
-      - key: "${DEEPSEEK_KEY_1}"
-        name: "deepseek-key-1"
-        rate_limit:
-          rpm: 200
-          tpm: 100000
-          concurrent: 20
-        weight: 1
-        enabled: true
+      - "${DEEPSEEK_KEY_1}"
 
-# 模型路由配置
+# 模型简单别名 (新特性)
+aliases:
+  small:
+    - zhipu/glm-4-flash
+    - aliyun/qwen-turbo
+
+# 高级模型路由配置 (支持权重)
 model_routes:
-  # 自定义别名模型
-  small-model:
-    description: "通用小模型"
-    targets:
-      - provider: zhipu
-        model: glm-4-flash
-        weight: 2
-      - provider: aliyun
-        model: qwen-turbo
-        weight: 1
-    strategy: weighted_round_robin
-
   large-model:
     description: "通用大模型"
     targets:

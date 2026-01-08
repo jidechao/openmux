@@ -19,23 +19,22 @@ type WeightedRoundRobin struct {
 }
 
 // NewWeightedRoundRobin 创建加权轮询负载均衡器
-func NewWeightedRoundRobin(provider string, apiKeys []config.APIKeyConfig) *WeightedRoundRobin {
+func NewWeightedRoundRobin(provider string, apiKeys []string, rateLimit config.RateLimit) *WeightedRoundRobin {
 	backends := make([]*Backend, 0, len(apiKeys))
 	weights := make([]int, 0, len(apiKeys))
 	
-	for i := range apiKeys {
-		if !apiKeys[i].Enabled {
+	for _, key := range apiKeys {
+		if key == "" {
 			continue
 		}
-		weight := apiKeys[i].Weight
-		if weight <= 0 {
-			weight = 1
-		}
+		// 默认权重为 1
+		weight := 1
 		backends = append(backends, &Backend{
-			Provider: provider,
-			APIKey:   &apiKeys[i],
-			Weight:   weight,
-			Healthy:  true,
+			Provider:  provider,
+			APIKey:    key,
+			RateLimit: rateLimit,
+			Weight:    weight,
+			Healthy:   true,
 		})
 		weights = append(weights, weight)
 	}
@@ -183,9 +182,9 @@ func InitFromConfig(cfg *config.Config) *BalancerPool {
 		
 		switch cfg.LoadBalancer.Strategy {
 		case "weighted_round_robin", "":
-			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys)
+			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys, providerCfg.RateLimit)
 		default:
-			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys)
+			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys, providerCfg.RateLimit)
 		}
 		
 		pool.Register(name, balancer)

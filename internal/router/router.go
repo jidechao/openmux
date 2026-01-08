@@ -162,6 +162,32 @@ func NewRouter(cfg *config.Config) *Router {
 		}
 		routes[name] = selector
 	}
+
+	// 处理简化的别名配置
+	for alias, models := range cfg.Aliases {
+		if _, exists := routes[alias]; exists {
+			continue // ModelRoutes 优先级更高
+		}
+
+		var targets []config.Target
+		for _, modelRef := range models {
+			provider, model, ok := parseProviderModel(modelRef)
+			if ok {
+				// 格式为 provider/model
+				if providers[provider] {
+					targets = append(targets, config.Target{
+						Provider: provider,
+						Model:    model,
+						Weight:   1,
+					})
+				}
+			}
+		}
+
+		if len(targets) > 0 {
+			routes[alias] = NewWeightedTargetSelector(targets)
+		}
+	}
 	
 	return &Router{
 		routes:           routes,

@@ -8,6 +8,7 @@ type Config struct {
 	Auth         AuthConfig                `yaml:"auth"`
 	Providers    map[string]ProviderConfig `yaml:"providers"`
 	ModelRoutes  map[string]ModelRoute     `yaml:"model_routes"`
+	Aliases      map[string][]string       `yaml:"aliases"`
 	Passthrough  PassthroughConfig         `yaml:"passthrough"`
 	LoadBalancer LoadBalancerConfig        `yaml:"load_balancer"`
 	Monitoring   MonitoringConfig          `yaml:"monitoring"`
@@ -45,20 +46,12 @@ type RateLimit struct {
 
 // ProviderConfig Provider 配置
 type ProviderConfig struct {
-	BaseURL string           `yaml:"base_url"`
-	Type    string           `yaml:"type"`
-	Timeout time.Duration    `yaml:"timeout"`
-	Retry   RetryConfig      `yaml:"retry"`
-	APIKeys []APIKeyConfig   `yaml:"api_keys"`
-}
-
-// APIKeyConfig API Key 配置
-type APIKeyConfig struct {
-	Key       string    `yaml:"key"`
-	Name      string    `yaml:"name"`
-	RateLimit RateLimit `yaml:"rate_limit"`
-	Weight    int       `yaml:"weight"`
-	Enabled   bool      `yaml:"enabled"`
+	BaseURL   string      `yaml:"base_url"`
+	Type      string      `yaml:"type"`
+	Timeout   time.Duration `yaml:"timeout"`
+	Retry     RetryConfig `yaml:"retry"`
+	APIKeys   []string    `yaml:"api_keys"`
+	RateLimit RateLimit   `yaml:"rate_limit"`
 }
 
 // RetryConfig 重试配置

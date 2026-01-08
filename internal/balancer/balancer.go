@@ -9,7 +9,8 @@ import (
 // Backend 后端实例
 type Backend struct {
 	Provider    string
-	APIKey      *config.APIKeyConfig
+	APIKey      string
+	RateLimit   config.RateLimit
 	Weight      int
 	Healthy     bool
 	ActiveConns int32
@@ -39,9 +40,9 @@ func (b *Backend) AcquireConn() bool {
 	if !b.Healthy {
 		return false
 	}
-	if b.APIKey.RateLimit.Concurrent > 0 {
+	if b.RateLimit.Concurrent > 0 {
 		current := atomic.LoadInt32(&b.ActiveConns)
-		if current >= int32(b.APIKey.RateLimit.Concurrent) {
+		if current >= int32(b.RateLimit.Concurrent) {
 			return false
 		}
 	}

@@ -155,7 +155,7 @@ func (h *ChatHandler) tryStreamTarget(
 		return err
 	}
 
-	streamResp, err := prov.ChatCompletionStream(r.Context(), req, target.Model, backend.APIKey.Key)
+	streamResp, err := prov.ChatCompletionStream(r.Context(), req, target.Model, backend.APIKey)
 	if err != nil {
 		h.markBackendUnhealthy(target.Provider, backend)
 		return err
@@ -253,7 +253,7 @@ func (h *ChatHandler) tryTarget(
 		return nil, err
 	}
 
-	resp, err := prov.ChatCompletion(ctx, req, target.Model, backend.APIKey.Key)
+	resp, err := prov.ChatCompletion(ctx, req, target.Model, backend.APIKey)
 
 	// 释放连接
 	if bal, _ := h.balancerPool.Get(target.Provider); bal != nil {

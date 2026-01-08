@@ -24,10 +24,7 @@ providers:
     type: "openai"
     timeout: 60s
     api_keys:
-      - key: "test-key"
-        name: "test"
-        weight: 1
-        enabled: true
+      - "test-key"
 
 model_routes:
   test-model:

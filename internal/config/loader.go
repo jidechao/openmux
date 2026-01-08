@@ -54,11 +54,8 @@ func validate(cfg *Config) error {
 			return fmt.Errorf("provider %s: no api_keys configured", name)
 		}
 		for i, key := range provider.APIKeys {
-			if key.Key == "" {
+			if key == "" {
 				return fmt.Errorf("provider %s: api_key[%d] is empty", name, i)
-			}
-			if key.Weight < 0 {
-				return fmt.Errorf("provider %s: api_key[%d] has invalid weight", name, i)
 			}
 		}
 	}

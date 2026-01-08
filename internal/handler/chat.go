@@ -13,6 +13,7 @@ import (
 	"github.com/openmux/openmux/internal/router"
 	"github.com/openmux/openmux/pkg/errors"
 	pkgopenai "github.com/openmux/openmux/pkg/openai"
+	"github.com/openmux/openmux/pkg/tokenizer"
 )
 
 // ChatHandler 聊天补全处理器
@@ -319,13 +320,44 @@ func (h *ChatHandler) markBackendUnhealthy(providerName string, backend *balance
 
 // estimateTokens 估算 token 数
 func (h *ChatHandler) estimateTokens(req *pkgopenai.ChatCompletionRequest) int {
-	chars := 0
-	for _, msg := range req.Messages {
-		chars += len(msg.Content)
+	tkm, err := tokenizer.GetEncoding(req.Model)
+	if err != nil {
+		// 降级到简单估算
+		chars := 0
+		for _, msg := range req.Messages {
+			chars += len(msg.Content)
+		}
+		return chars/4 + len(req.Messages)*10 + 100
 	}
-	// 简单估算: char/4 + overhead + output buffer
-	// 假设平均 output 是 100 token
-	return chars/4 + len(req.Messages)*10 + 100
+
+	tokensPerMessage := 3
+	tokensPerName := 1
+	
+	numTokens := 0
+	for _, msg := range req.Messages {
+		numTokens += tokensPerMessage
+		numTokens += len(tkm.Encode(msg.Content, nil, nil))
+		numTokens += len(tkm.Encode(msg.Role, nil, nil))
+		if msg.Name != "" {
+			numTokens += tokensPerName
+			numTokens += len(tkm.Encode(msg.Name, nil, nil))
+		}
+	}
+	numTokens += 3 // reply priming
+	
+	// 预留输出 token 缓冲
+	outputBuffer := 100
+	if req.MaxTokens != nil {
+		// 如果指定了 MaxTokens，可以适当增加预留，但不要全部预留以免阻塞过多
+		// 这里暂取较小值
+		if *req.MaxTokens < 500 {
+			outputBuffer = *req.MaxTokens
+		} else {
+			outputBuffer = 500
+		}
+	}
+	
+	return numTokens + outputBuffer
 }
 
 // writeError 写入错误响应

@@ -12,6 +12,7 @@ import (
 	"github.com/openmux/openmux/internal/router"
 	"github.com/openmux/openmux/pkg/errors"
 	pkgopenai "github.com/openmux/openmux/pkg/openai"
+	"github.com/openmux/openmux/pkg/tokenizer"
 )
 
 // EmbeddingHandler Embedding 处理器
@@ -165,18 +166,17 @@ func (h *EmbeddingHandler) markBackendUnhealthy(providerName string, backend *ba
 }
 
 func (h *EmbeddingHandler) estimateTokens(req *pkgopenai.EmbeddingRequest) int {
-	// 简单估算
 	switch v := req.Input.(type) {
 	case string:
-		return len(v) / 4
+		return tokenizer.CountTokens(req.Model, v)
 	case []interface{}:
 		count := 0
 		for _, item := range v {
 			if s, ok := item.(string); ok {
-				count += len(s)
+				count += tokenizer.CountTokens(req.Model, s)
 			}
 		}
-		return count / 4
+		return count
 	default:
 		return 100 // 默认值
 	}

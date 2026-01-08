@@ -58,6 +58,15 @@ type ResponseFormat struct {
 	Type string `json:"type"`
 }
 
+// EmbeddingRequest Embedding 请求
+type EmbeddingRequest struct {
+	Input          interface{} `json:"input"` // string or []string or []int or [][]int
+	Model          string      `json:"model"`
+	EncodingFormat string      `json:"encoding_format,omitempty"`
+	Dimensions     *int        `json:"dimensions,omitempty"`
+	User           string      `json:"user,omitempty"`
+}
+
 // ErrorResponse 错误响应
 type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`

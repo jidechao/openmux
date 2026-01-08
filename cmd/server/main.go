@@ -40,6 +40,7 @@ func main() {
 
 	// 创建处理器
 	chatHandler := handler.NewChatHandler(modelRouter, providerPool, balancerPool)
+	embeddingHandler := handler.NewEmbeddingHandler(modelRouter, providerPool, balancerPool)
 	modelsHandler := handler.NewModelsHandler(modelRouter)
 	healthHandler := handler.NewHealthHandler(balancerPool)
 
@@ -56,6 +57,18 @@ func main() {
 				middleware.CORS(
 					authMiddleware.Authenticate(
 						http.HandlerFunc(chatHandler.Handle),
+					),
+				),
+			),
+		),
+	)
+
+	mux.Handle("/v1/embeddings",
+		middleware.Recovery(
+			middleware.Logger(
+				middleware.CORS(
+					authMiddleware.Authenticate(
+						http.HandlerFunc(embeddingHandler.Handle),
 					),
 				),
 			),

@@ -15,6 +15,9 @@ type Provider interface {
 	
 	// ChatCompletionStream 聊天补全（流式）
 	ChatCompletionStream(ctx context.Context, req *pkgopenai.ChatCompletionRequest, model, apiKey string) (*StreamResponse, error)
+
+	// CreateEmbedding 创建 Embedding
+	CreateEmbedding(ctx context.Context, req *pkgopenai.EmbeddingRequest, model, apiKey string) (*openai.CreateEmbeddingResponse, error)
 	
 	// Name 返回 Provider 名称
 	Name() string

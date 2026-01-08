@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/openai/openai-go"
@@ -78,6 +79,82 @@ func (p *OpenAIProvider) ChatCompletionStream(
 	return &StreamResponse{
 		Stream: stream,
 	}, nil
+}
+
+// CreateEmbedding 创建 Embedding
+func (p *OpenAIProvider) CreateEmbedding(
+	ctx context.Context,
+	req *pkgopenai.EmbeddingRequest,
+	model, apiKey string,
+) (*openai.CreateEmbeddingResponse, error) {
+	client := openai.NewClient(
+		option.WithBaseURL(p.baseURL),
+		option.WithAPIKey(apiKey),
+		option.WithRequestTimeout(p.timeout),
+	)
+
+	params, err := p.convertEmbeddingRequest(req, model)
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrCodeInvalidRequest, "failed to convert request", err)
+	}
+
+	resp, err := client.Embeddings.New(ctx, params)
+	if err != nil {
+		return nil, p.handleError(err)
+	}
+
+	return resp, nil
+}
+
+// convertEmbeddingRequest 将 Embedding DTO 转换为 SDK 参数
+func (p *OpenAIProvider) convertEmbeddingRequest(req *pkgopenai.EmbeddingRequest, model string) (openai.EmbeddingNewParams, error) {
+	params := openai.EmbeddingNewParams{
+		Model: model,
+	}
+
+	// 转换 Input
+	switch v := req.Input.(type) {
+	case string:
+		params.Input = openai.EmbeddingNewParamsInputUnion{
+			OfString: openai.String(v),
+		}
+	case []interface{}:
+		if len(v) > 0 {
+			switch v[0].(type) {
+			case string:
+				strs := make([]string, len(v))
+				for i, elem := range v {
+					if s, ok := elem.(string); ok {
+						strs[i] = s
+					} else {
+						return params, fmt.Errorf("mixed types in input array")
+					}
+				}
+				params.Input = openai.EmbeddingNewParamsInputUnion{
+					OfArrayOfStrings: strs,
+				}
+			default:
+				// 暂时只支持字符串数组，token 数组处理比较复杂且网关场景少见
+				return params, fmt.Errorf("unsupported input array element type: %T", v[0])
+			}
+		}
+	default:
+		return params, fmt.Errorf("unsupported input type: %T", v)
+	}
+
+	if req.User != "" {
+		params.User = openai.String(req.User)
+	}
+
+	if req.EncodingFormat != "" {
+		params.EncodingFormat = openai.EmbeddingNewParamsEncodingFormat(req.EncodingFormat)
+	}
+
+	if req.Dimensions != nil {
+		params.Dimensions = openai.Int(int64(*req.Dimensions))
+	}
+
+	return params, nil
 }
 
 // convertRequest 将 DTO 转换为 SDK 参数

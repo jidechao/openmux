@@ -58,54 +58,6 @@ type ResponseFormat struct {
 	Type string `json:"type"`
 }
 
-// ChatCompletionResponse 聊天补全响应
-type ChatCompletionResponse struct {
-	ID      string                 `json:"id"`
-	Object  string                 `json:"object"`
-	Created int64                  `json:"created"`
-	Model   string                 `json:"model"`
-	Choices []ChatCompletionChoice `json:"choices"`
-	Usage   Usage                  `json:"usage"`
-}
-
-// ChatCompletionChoice 选择项
-type ChatCompletionChoice struct {
-	Index        int         `json:"index"`
-	Message      ChatMessage `json:"message"`
-	FinishReason string      `json:"finish_reason"`
-}
-
-// ChatCompletionChunk 流式响应块
-type ChatCompletionChunk struct {
-	ID      string                      `json:"id"`
-	Object  string                      `json:"object"`
-	Created int64                       `json:"created"`
-	Model   string                      `json:"model"`
-	Choices []ChatCompletionChunkChoice `json:"choices"`
-	Usage   *Usage                      `json:"usage,omitempty"` // 最后一个 chunk 包含 usage
-}
-
-// ChatCompletionChunkChoice 流式选择项
-type ChatCompletionChunkChoice struct {
-	Index        int              `json:"index"`
-	Delta        ChatMessageDelta `json:"delta"`
-	FinishReason *string          `json:"finish_reason"`
-}
-
-// ChatMessageDelta 消息增量
-type ChatMessageDelta struct {
-	Role      string     `json:"role,omitempty"`
-	Content   string     `json:"content,omitempty"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
-}
-
-// Usage token 使用情况
-type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-}
-
 // ErrorResponse 错误响应
 type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`

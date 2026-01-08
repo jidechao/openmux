@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 
+	"github.com/openai/openai-go"
 	"github.com/openmux/openmux/internal/balancer"
 	"github.com/openmux/openmux/internal/config"
 	"github.com/openmux/openmux/internal/provider"
 	"github.com/openmux/openmux/internal/router"
 	"github.com/openmux/openmux/pkg/errors"
-	"github.com/openmux/openmux/pkg/openai"
+	pkgopenai "github.com/openmux/openmux/pkg/openai"
 )
 
 // ChatHandler 聊天补全处理器
@@ -43,7 +43,7 @@ func (h *ChatHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 解析请求
-	var req openai.ChatCompletionRequest
+	var req pkgopenai.ChatCompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
@@ -72,7 +72,7 @@ func (h *ChatHandler) Handle(w http.ResponseWriter, r *http.Request) {
 func (h *ChatHandler) handleNonStream(
 	w http.ResponseWriter,
 	r *http.Request,
-	req *openai.ChatCompletionRequest,
+	req *pkgopenai.ChatCompletionRequest,
 	targetSelector router.TargetSelector,
 ) {
 	resp, err := h.handleWithRetry(r.Context(), req, targetSelector)
@@ -93,7 +93,7 @@ func (h *ChatHandler) handleNonStream(
 func (h *ChatHandler) handleStream(
 	w http.ResponseWriter,
 	r *http.Request,
-	req *openai.ChatCompletionRequest,
+	req *pkgopenai.ChatCompletionRequest,
 	targetSelector router.TargetSelector,
 ) {
 	// 设置 SSE headers
@@ -136,7 +136,7 @@ func (h *ChatHandler) handleStream(
 func (h *ChatHandler) tryStreamTarget(
 	w http.ResponseWriter,
 	r *http.Request,
-	req *openai.ChatCompletionRequest,
+	req *pkgopenai.ChatCompletionRequest,
 	flusher http.Flusher,
 	target *config.Target,
 ) error {
@@ -168,38 +168,36 @@ func (h *ChatHandler) tryStreamTarget(
 
 // forwardStream 转发流式响应
 func (h *ChatHandler) forwardStream(w http.ResponseWriter, flusher http.Flusher, streamResp *provider.StreamResponse) {
-	for {
-		select {
-		case chunk, ok := <-streamResp.ChunkCh:
-			if !ok {
-				fmt.Fprintf(w, "data: [DONE]\n\n")
-				flusher.Flush()
-				return
-			}
+	stream := streamResp.Stream
+	defer stream.Close()
 
-			data, err := json.Marshal(chunk)
-			if err != nil {
-				continue
-			}
-
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
-
-		case err := <-streamResp.ErrCh:
-			if err != nil && err != io.EOF {
-				writeSSEError(w, flusher, "stream_error", err.Error())
-			}
-			return
+	for stream.Next() {
+		chunk := stream.Current()
+		
+		data, err := json.Marshal(chunk)
+		if err != nil {
+			continue
 		}
+
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
 	}
+
+	if err := stream.Err(); err != nil {
+		writeSSEError(w, flusher, "stream_error", err.Error())
+		return
+	}
+
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+	flusher.Flush()
 }
 
 // handleWithRetry 带重试的请求处理
 func (h *ChatHandler) handleWithRetry(
 	ctx context.Context,
-	req *openai.ChatCompletionRequest,
+	req *pkgopenai.ChatCompletionRequest,
 	targetSelector router.TargetSelector,
-) (*openai.ChatCompletionResponse, error) {
+) (*openai.ChatCompletion, error) {
 	var lastErr error
 
 	// 首先尝试使用加权选择器选择目标
@@ -240,9 +238,9 @@ func (h *ChatHandler) handleWithRetry(
 // tryTarget 尝试使用指定目标处理请求
 func (h *ChatHandler) tryTarget(
 	ctx context.Context,
-	req *openai.ChatCompletionRequest,
+	req *pkgopenai.ChatCompletionRequest,
 	target *config.Target,
-) (*openai.ChatCompletionResponse, error) {
+) (*openai.ChatCompletion, error) {
 	backend, err := h.selectBackend(target.Provider)
 	if err != nil {
 		return nil, err
@@ -290,8 +288,8 @@ func (h *ChatHandler) markBackendUnhealthy(providerName string, backend *balance
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(openai.ErrorResponse{
-		Error: openai.ErrorDetail{
+	json.NewEncoder(w).Encode(pkgopenai.ErrorResponse{
+		Error: pkgopenai.ErrorDetail{
 			Code:    code,
 			Message: message,
 			Type:    "error",
@@ -301,8 +299,8 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 // writeSSEError 写入 SSE 错误
 func writeSSEError(w http.ResponseWriter, flusher http.Flusher, code, message string) {
-	errData, _ := json.Marshal(openai.ErrorResponse{
-		Error: openai.ErrorDetail{
+	errData, _ := json.Marshal(pkgopenai.ErrorResponse{
+		Error: pkgopenai.ErrorDetail{
 			Code:    code,
 			Message: message,
 			Type:    "error",

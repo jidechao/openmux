@@ -1,0 +1,148 @@
+# OpenMux 配置示例
+
+# 服务配置
+server:
+  port: 8080
+  host: "0.0.0.0"
+  timeout: 120s
+  read_timeout: 60s
+  write_timeout: 60s
+
+# 认证配置
+auth:
+  enabled: true
+  api_keys:
+    - key: "sk-your-service-key-1"
+      name: "client-1"
+      rate_limit:
+        rpm: 500
+        tpm: 200000
+        concurrent: 50
+    - key: "sk-your-service-key-2"
+      name: "client-2"
+      rate_limit:
+        rpm: 1000
+        tpm: 500000
+        concurrent: 100
+
+# Provider 配置
+providers:
+  zhipu:
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
+    type: "openai"
+    timeout: 60s
+    retry:
+      max_attempts: 3
+      backoff: "exponential"
+    api_keys:
+      - key: "${ZHIPU_KEY_1}"
+        name: "zhipu-key-1"
+        rate_limit:
+          rpm: 100
+          tpm: 50000
+          concurrent: 10
+        weight: 1
+        enabled: true
+      - key: "${ZHIPU_KEY_2}"
+        name: "zhipu-key-2"
+        rate_limit:
+          rpm: 100
+          tpm: 50000
+          concurrent: 10
+        weight: 1
+        enabled: true
+
+  aliyun:
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    type: "openai"
+    timeout: 60s
+    api_keys:
+      - key: "${ALIYUN_KEY_1}"
+        name: "aliyun-key-1"
+        rate_limit:
+          rpm: 200
+          tpm: 100000
+          concurrent: 20
+        weight: 2
+        enabled: true
+
+  deepseek:
+    base_url: "https://api.deepseek.com/v1"
+    type: "openai"
+    timeout: 60s
+    api_keys:
+      - key: "${DEEPSEEK_KEY_1}"
+        name: "deepseek-key-1"
+        rate_limit:
+          rpm: 200
+          tpm: 100000
+          concurrent: 20
+        weight: 1
+        enabled: true
+
+# 模型路由配置
+model_routes:
+  # 自定义别名模型
+  small-model:
+    description: "通用小模型"
+    targets:
+      - provider: zhipu
+        model: glm-4-flash
+        weight: 2
+      - provider: aliyun
+        model: qwen-turbo
+        weight: 1
+    strategy: weighted_round_robin
+
+  large-model:
+    description: "通用大模型"
+    targets:
+      - provider: deepseek
+        model: deepseek-chat
+        weight: 3
+      - provider: zhipu
+        model: glm-4-plus
+        weight: 1
+    strategy: weighted_round_robin
+
+  # 同一模型的多云部署
+  glm-4-flash:
+    description: "GLM-4-Flash 多云部署"
+    targets:
+      - provider: zhipu
+        model: glm-4-flash
+        weight: 2
+      - provider: aliyun
+        model: glm-4-flash
+        weight: 1
+    strategy: weighted_round_robin
+
+# 直通模式配置
+passthrough:
+  enabled: true
+  allowed_providers:
+    - zhipu
+    - aliyun
+    - deepseek
+
+# 负载均衡配置
+load_balancer:
+  strategy: weighted_round_robin
+  health_check:
+    enabled: true
+    interval: 30s
+    timeout: 5s
+    unhealthy_threshold: 3
+    healthy_threshold: 2
+
+# 监控配置
+monitoring:
+  enabled: true
+  metrics_path: "/metrics"
+  log_level: "info"
+
+# 缓存配置
+cache:
+  enabled: false
+  ttl: 3600s
+  max_size: 1000

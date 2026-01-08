@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  openmux:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - ZHIPU_KEY_1=${ZHIPU_KEY_1}
+      - ZHIPU_KEY_2=${ZHIPU_KEY_2}
+      - ALIYUN_KEY_1=${ALIYUN_KEY_1}
+      - DEEPSEEK_KEY_1=${DEEPSEEK_KEY_1}
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

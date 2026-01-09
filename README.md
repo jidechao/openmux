@@ -128,6 +128,27 @@ curl http://localhost:8080/v1/embeddings \
   }'
 ```
 
+### Rerank (重排)
+
+OpenMux 支持通过 `/v1/rerank` 接口调用重排（Rerank）模型。
+您可以在 `model_routes` 中定义您的 Rerank 模型别名，或者直接通过 `provider/rerank_model_name` 的格式进行直通访问。
+
+```bash
+curl http://localhost:8080/v1/rerank \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <您的OpenMux客户端API Key>" \
+  -d '{
+    "model": "rerank-jina", # 或者 "jina/jina-reranker-v1-base-en"
+    "query": "搜索相关文档",
+    "documents": [
+      "这是一篇关于人工智能的文档。",
+      "这是一篇关于机器学习的文档。",
+      "这是一篇关于深度学习的文档。"
+    ],
+    "top_n": 2
+  }'
+```
+
 ## 架构设计
 
 ```

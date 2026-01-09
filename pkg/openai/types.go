@@ -67,6 +67,34 @@ type EmbeddingRequest struct {
 	User           string      `json:"user,omitempty"`
 }
 
+// RerankRequest Rerank 请求
+type RerankRequest struct {
+	Model     string   `json:"model"`
+	Query     string   `json:"query"`
+	Documents []string `json:"documents"`
+	TopN      *int     `json:"top_n,omitempty"`
+}
+
+// RerankResponse Rerank 响应
+type RerankResponse struct {
+	Model   string         `json:"model"`
+	Results []RerankResult `json:"results"`
+	Usage   Usage          `json:"usage"`
+}
+
+// RerankResult Rerank 结果
+type RerankResult struct {
+	Index          int     `json:"index"`
+	RelevanceScore float64 `json:"relevance_score"`
+}
+
+// Usage 使用情况
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 // ErrorResponse 错误响应
 type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`

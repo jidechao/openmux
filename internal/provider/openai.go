@@ -1,8 +1,12 @@
 package provider
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/openai/openai-go"
@@ -16,6 +20,7 @@ type OpenAIProvider struct {
 	name    string
 	baseURL string
 	timeout time.Duration
+	client  *http.Client
 }
 
 // NewOpenAIProvider 创建 OpenAI Provider
@@ -24,6 +29,9 @@ func NewOpenAIProvider(name, baseURL string, timeout time.Duration) *OpenAIProvi
 		name:    name,
 		baseURL: baseURL,
 		timeout: timeout,
+		client: &http.Client{
+			Timeout: timeout,
+		},
 	}
 }
 
@@ -42,6 +50,7 @@ func (p *OpenAIProvider) ChatCompletion(
 		option.WithBaseURL(p.baseURL),
 		option.WithAPIKey(apiKey),
 		option.WithRequestTimeout(p.timeout),
+		option.WithHTTPClient(p.client), // 复用 HTTP Client
 	)
 
 	params, err := p.convertRequest(req, model)
@@ -67,6 +76,7 @@ func (p *OpenAIProvider) ChatCompletionStream(
 		option.WithBaseURL(p.baseURL),
 		option.WithAPIKey(apiKey),
 		option.WithRequestTimeout(p.timeout),
+		option.WithHTTPClient(p.client),
 	)
 
 	params, err := p.convertRequest(req, model)
@@ -91,6 +101,7 @@ func (p *OpenAIProvider) CreateEmbedding(
 		option.WithBaseURL(p.baseURL),
 		option.WithAPIKey(apiKey),
 		option.WithRequestTimeout(p.timeout),
+		option.WithHTTPClient(p.client),
 	)
 
 	params, err := p.convertEmbeddingRequest(req, model)
@@ -106,55 +117,54 @@ func (p *OpenAIProvider) CreateEmbedding(
 	return resp, nil
 }
 
-// convertEmbeddingRequest 将 Embedding DTO 转换为 SDK 参数
-func (p *OpenAIProvider) convertEmbeddingRequest(req *pkgopenai.EmbeddingRequest, model string) (openai.EmbeddingNewParams, error) {
-	params := openai.EmbeddingNewParams{
-		Model: model,
+// Rerank 重排序
+func (p *OpenAIProvider) Rerank(
+	ctx context.Context,
+	req *pkgopenai.RerankRequest,
+	model, apiKey string,
+) (*pkgopenai.RerankResponse, error) {
+	// 强制设置模型
+	req.Model = model
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrCodeInvalidRequest, "failed to marshal request", err)
 	}
 
-	// 转换 Input
-	switch v := req.Input.(type) {
-	case string:
-		params.Input = openai.EmbeddingNewParamsInputUnion{
-			OfString: openai.String(v),
-		}
-	case []interface{}:
-		if len(v) > 0 {
-			switch v[0].(type) {
-			case string:
-				strs := make([]string, len(v))
-				for i, elem := range v {
-					if s, ok := elem.(string); ok {
-						strs[i] = s
-					} else {
-						return params, fmt.Errorf("mixed types in input array")
-					}
-				}
-				params.Input = openai.EmbeddingNewParamsInputUnion{
-					OfArrayOfStrings: strs,
-				}
-			default:
-				// 暂时只支持字符串数组，token 数组处理比较复杂且网关场景少见
-				return params, fmt.Errorf("unsupported input array element type: %T", v[0])
-			}
-		}
-	default:
-		return params, fmt.Errorf("unsupported input type: %T", v)
+	// 假设下游 Rerank API 路径为 /rerank (兼容 Cohere/Jina/SiliconFlow 等)
+	// BaseURL 通常是 https://api.xxx.com/v1
+	// 所以完整 URL 是 https://api.xxx.com/v1/rerank
+	url := p.baseURL + "/rerank"
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrCodeProviderError, "failed to create request", err)
 	}
 
-	if req.User != "" {
-		params.User = openai.String(req.User)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrCodeProviderError, "request failed", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrCodeProviderError, "failed to read response", err)
 	}
 
-	if req.EncodingFormat != "" {
-		params.EncodingFormat = openai.EmbeddingNewParamsEncodingFormat(req.EncodingFormat)
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New(errors.ErrCodeProviderError, fmt.Sprintf("http error: %d, body: %s", resp.StatusCode, string(respBody)))
 	}
 
-	if req.Dimensions != nil {
-		params.Dimensions = openai.Int(int64(*req.Dimensions))
+	var result pkgopenai.RerankResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, errors.Wrap(errors.ErrCodeProviderError, "failed to unmarshal response", err)
 	}
 
-	return params, nil
+	return &result, nil
 }
 
 // convertRequest 将 DTO 转换为 SDK 参数
@@ -205,6 +215,57 @@ func (p *OpenAIProvider) convertRequest(req *pkgopenai.ChatCompletionRequest, mo
 		params.User = openai.String(req.User)
 	}
 	
+	return params, nil
+}
+
+// convertEmbeddingRequest 将 Embedding DTO 转换为 SDK 参数
+func (p *OpenAIProvider) convertEmbeddingRequest(req *pkgopenai.EmbeddingRequest, model string) (openai.EmbeddingNewParams, error) {
+	params := openai.EmbeddingNewParams{
+		Model: model,
+	}
+
+	// 转换 Input
+	switch v := req.Input.(type) {
+	case string:
+		params.Input = openai.EmbeddingNewParamsInputUnion{
+			OfString: openai.String(v),
+		}
+	case []interface{}:
+		if len(v) > 0 {
+			switch v[0].(type) {
+			case string:
+				strs := make([]string, len(v))
+				for i, elem := range v {
+					if s, ok := elem.(string); ok {
+						strs[i] = s
+					} else {
+						return params, fmt.Errorf("mixed types in input array")
+					}
+				}
+				params.Input = openai.EmbeddingNewParamsInputUnion{
+					OfArrayOfStrings: strs,
+				}
+			default:
+				// 暂时只支持字符串数组，token 数组处理比较复杂且网关场景少见
+				return params, fmt.Errorf("unsupported input array element type: %T", v[0])
+			}
+		}
+	default:
+		return params, fmt.Errorf("unsupported input type: %T", v)
+	}
+
+	if req.User != "" {
+		params.User = openai.String(req.User)
+	}
+
+	if req.EncodingFormat != "" {
+		params.EncodingFormat = openai.EmbeddingNewParamsEncodingFormat(req.EncodingFormat)
+	}
+
+	if req.Dimensions != nil {
+		params.Dimensions = openai.Int(int64(*req.Dimensions))
+	}
+
 	return params, nil
 }
 

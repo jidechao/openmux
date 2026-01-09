@@ -7,10 +7,8 @@ type Config struct {
 	Server       ServerConfig              `yaml:"server"`
 	Auth         AuthConfig                `yaml:"auth"`
 	Providers    map[string]ProviderConfig `yaml:"providers"`
-	ModelRoutes  map[string]ModelRoute     `yaml:"model_routes"`
-	Aliases      map[string][]string       `yaml:"aliases"`
+	ModelRoutes  map[string]ModelRouteConfig `yaml:"model_routes"`
 	Passthrough  PassthroughConfig         `yaml:"passthrough"`
-	LoadBalancer LoadBalancerConfig        `yaml:"load_balancer"`
 	Monitoring   MonitoringConfig          `yaml:"monitoring"`
 	Cache        CacheConfig               `yaml:"cache"`
 }
@@ -46,12 +44,13 @@ type RateLimit struct {
 
 // ProviderConfig Provider 配置
 type ProviderConfig struct {
-	BaseURL   string      `yaml:"base_url"`
-	Type      string      `yaml:"type"`
-	Timeout   time.Duration `yaml:"timeout"`
-	Retry     RetryConfig `yaml:"retry"`
-	APIKeys   []string    `yaml:"api_keys"`
-	RateLimit RateLimit   `yaml:"rate_limit"`
+	BaseURL      string              `yaml:"base_url"`
+	Type         string              `yaml:"type"`
+	Timeout      time.Duration       `yaml:"timeout"`
+	Retry        RetryConfig         `yaml:"retry"`
+	APIKeys      []string            `yaml:"api_keys"`
+	RateLimit    RateLimit           `yaml:"rate_limit"`
+	LoadBalancer *LoadBalancerConfig `yaml:"load_balancer,omitempty"`
 }
 
 // RetryConfig 重试配置
@@ -60,8 +59,8 @@ type RetryConfig struct {
 	Backoff     string `yaml:"backoff"`
 }
 
-// ModelRoute 模型路由配置
-type ModelRoute struct {
+// ModelRouteConfig 模型路由配置
+type ModelRouteConfig struct {
 	Description string   `yaml:"description"`
 	Targets     []Target `yaml:"targets"`
 	Strategy    string   `yaml:"strategy"`

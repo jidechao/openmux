@@ -10,7 +10,7 @@ server:
 
 # 认证配置
 auth:
-  enabled: true
+  enabled: false
   api_keys:
     - key: "sk-your-service-key-1"
       name: "client-1"
@@ -41,6 +41,14 @@ providers:
     api_keys:
       - "${ZHIPU_KEY_1}"
       - "${ZHIPU_KEY_2}"
+    # load_balancer: # 可选，为 zhipu 单独配置密钥均衡策略
+    #   strategy: "weighted_round_robin" # 默认为轮询
+    #   health_check:
+    #     enabled: true
+    #     interval: 30s
+    #     timeout: 5s
+    #     unhealthy_threshold: 3
+    #     healthy_threshold: 2
 
   aliyun:
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -64,11 +72,7 @@ providers:
     api_keys:
       - "${DEEPSEEK_KEY_1}"
 
-# 模型简单别名 (新特性)
-aliases:
-  small:
-    - zhipu/glm-4-flash
-    - aliyun/qwen-turbo
+
 
 # 高级模型路由配置 (支持权重)
 model_routes:
@@ -95,23 +99,9 @@ model_routes:
         weight: 1
     strategy: weighted_round_robin
 
-# 直通模式配置
-passthrough:
-  enabled: true
-  allowed_providers:
-    - zhipu
-    - aliyun
-    - deepseek
 
-# 负载均衡配置
-load_balancer:
-  strategy: weighted_round_robin
-  health_check:
-    enabled: true
-    interval: 30s
-    timeout: 5s
-    unhealthy_threshold: 3
-    healthy_threshold: 2
+
+
 
 # 监控配置
 monitoring:

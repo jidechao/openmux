@@ -18,6 +18,9 @@ type Provider interface {
 
 	// CreateEmbedding 创建 Embedding
 	CreateEmbedding(ctx context.Context, req *pkgopenai.EmbeddingRequest, model, apiKey string) (*openai.CreateEmbeddingResponse, error)
+
+	// Rerank 重排序
+	Rerank(ctx context.Context, req *pkgopenai.RerankRequest, model, apiKey string) (*pkgopenai.RerankResponse, error)
 	
 	// Name 返回 Provider 名称
 	Name() string

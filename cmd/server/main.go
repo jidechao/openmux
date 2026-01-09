@@ -41,6 +41,7 @@ func main() {
 	// 创建处理器
 	chatHandler := handler.NewChatHandler(modelRouter, providerPool, balancerPool)
 	embeddingHandler := handler.NewEmbeddingHandler(modelRouter, providerPool, balancerPool)
+	rerankHandler := handler.NewRerankHandler(modelRouter, providerPool, balancerPool)
 	modelsHandler := handler.NewModelsHandler(modelRouter)
 	healthHandler := handler.NewHealthHandler(balancerPool)
 
@@ -69,6 +70,18 @@ func main() {
 				middleware.CORS(
 					authMiddleware.Authenticate(
 						http.HandlerFunc(embeddingHandler.Handle),
+					),
+				),
+			),
+		),
+	)
+
+	mux.Handle("/v1/rerank",
+		middleware.Recovery(
+			middleware.Logger(
+				middleware.CORS(
+					authMiddleware.Authenticate(
+						http.HandlerFunc(rerankHandler.Handle),
 					),
 				),
 			),

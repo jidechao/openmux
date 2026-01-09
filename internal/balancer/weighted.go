@@ -178,19 +178,31 @@ func (p *BalancerPool) Get(provider string) (Balancer, error) {
 // InitFromConfig 从配置初始化负载均衡器池
 func InitFromConfig(cfg *config.Config) *BalancerPool {
 	pool := NewBalancerPool()
-	
+
 	for name, providerCfg := range cfg.Providers {
 		var balancer Balancer
-		
-		switch cfg.LoadBalancer.Strategy {
-		case "weighted_round_robin", "":
+		var strategy string
+
+		// 检查 per-provider 的负载均衡配置
+		if providerCfg.LoadBalancer != nil {
+			strategy = providerCfg.LoadBalancer.Strategy
+		}
+
+		// 如果未配置或为空，则使用默认策略
+		if strategy == "" {
+			strategy = "weighted_round_robin" // 默认策略
+		}
+
+		switch strategy {
+		case "weighted_round_robin":
 			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys, providerCfg.RateLimit)
 		default:
+			// 默认回退到 weighted_round_robin
 			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys, providerCfg.RateLimit)
 		}
-		
+
 		pool.Register(name, balancer)
 	}
-	
+
 	return pool
 }

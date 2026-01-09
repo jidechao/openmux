@@ -137,18 +137,11 @@ type Router struct {
 
 // NewRouter 创建路由器
 func NewRouter(cfg *config.Config) *Router {
-	allowedProviders := make(map[string]bool)
-	if cfg.Passthrough.Enabled && len(cfg.Passthrough.AllowedProviders) > 0 {
-		for _, p := range cfg.Passthrough.AllowedProviders {
-			allowedProviders[p] = true
-		}
-	}
-	
 	providers := make(map[string]bool)
 	for name := range cfg.Providers {
 		providers[name] = true
 	}
-	
+
 	// 为每个路由创建选择器
 	routes := make(map[string]TargetSelector)
 	for name, route := range cfg.ModelRoutes {
@@ -163,36 +156,10 @@ func NewRouter(cfg *config.Config) *Router {
 		routes[name] = selector
 	}
 
-	// 处理简化的别名配置
-	for alias, models := range cfg.Aliases {
-		if _, exists := routes[alias]; exists {
-			continue // ModelRoutes 优先级更高
-		}
-
-		var targets []config.Target
-		for _, modelRef := range models {
-			provider, model, ok := parseProviderModel(modelRef)
-			if ok {
-				// 格式为 provider/model
-				if providers[provider] {
-					targets = append(targets, config.Target{
-						Provider: provider,
-						Model:    model,
-						Weight:   1,
-					})
-				}
-			}
-		}
-
-		if len(targets) > 0 {
-			routes[alias] = NewWeightedTargetSelector(targets)
-		}
-	}
-	
 	return &Router{
 		routes:           routes,
-		passthrough:      cfg.Passthrough.Enabled,
-		allowedProviders: allowedProviders,
+		passthrough:      true,                      // 默认开启直通模式
+		allowedProviders: make(map[string]bool), // 保留空 map 以避免 nil panic
 		providers:        providers,
 	}
 }
@@ -212,12 +179,6 @@ func (r *Router) Route(modelName string) (TargetSelector, error) {
 			if !r.providers[provider] {
 				return nil, errors.New(errors.ErrCodeModelNotFound, 
 					fmt.Sprintf("provider not found: %s", provider))
-			}
-			
-			// 检查是否在允许列表中
-			if len(r.allowedProviders) > 0 && !r.allowedProviders[provider] {
-				return nil, errors.New(errors.ErrCodeModelNotFound, 
-					fmt.Sprintf("provider not allowed: %s", provider))
 			}
 			
 			// 返回单个目标的选择器

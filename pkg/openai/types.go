@@ -69,10 +69,11 @@ type EmbeddingRequest struct {
 
 // RerankRequest Rerank 请求
 type RerankRequest struct {
-	Model     string   `json:"model"`
-	Query     string   `json:"query"`
-	Documents []string `json:"documents"`
-	TopN      *int     `json:"top_n,omitempty"`
+	Model           string   `json:"model"`
+	Query           string   `json:"query"`
+	Documents       []string `json:"documents"`
+	TopN            *int     `json:"top_n,omitempty"`
+	ReturnDocuments bool     `json:"return_documents,omitempty"`
 }
 
 // RerankResponse Rerank 响应
@@ -84,8 +85,9 @@ type RerankResponse struct {
 
 // RerankResult Rerank 结果
 type RerankResult struct {
-	Index          int     `json:"index"`
-	RelevanceScore float64 `json:"relevance_score"`
+	Index          int         `json:"index"`
+	RelevanceScore float64     `json:"relevance_score"`
+	Document       interface{} `json:"document,omitempty"`
 }
 
 // Usage 使用情况

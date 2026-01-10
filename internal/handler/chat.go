@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/openai/openai-go"
@@ -78,8 +79,13 @@ func (h *ChatHandler) handleNonStream(
 ) {
 	resp, err := h.handleWithRetry(r.Context(), req, targetSelector)
 	if err != nil {
+		log.Printf("[ERROR] Chat completion failed: %v", err)
 		if e, ok := err.(*errors.Error); ok {
-			writeError(w, http.StatusInternalServerError, string(e.Code), e.Message)
+			msg := e.Message
+			if e.Err != nil {
+				msg = fmt.Sprintf("%s: %v", e.Message, e.Err)
+			}
+			writeError(w, http.StatusInternalServerError, string(e.Code), msg)
 		} else {
 			writeError(w, http.StatusInternalServerError, "provider_error", err.Error())
 		}
@@ -118,6 +124,7 @@ func (h *ChatHandler) handleStream(
 		if err := h.tryStreamTarget(w, r, req, flusher, target); err == nil {
 			return
 		}
+		log.Printf("[WARN] Stream target %s/%s failed: %v", target.Provider, target.Model, err)
 		lastErr = err
 	}
 
@@ -126,10 +133,12 @@ func (h *ChatHandler) handleStream(
 		if err := h.tryStreamTarget(w, r, req, flusher, &target); err == nil {
 			return
 		}
+		log.Printf("[WARN] Stream target %s/%s failed: %v", target.Provider, target.Model, err)
 		lastErr = err
 	}
 
 	// 所有 target 都失败
+	log.Printf("[ERROR] All stream targets failed: %v", lastErr)
 	writeSSEError(w, flusher, "provider_error", fmt.Sprintf("All targets failed: %v", lastErr))
 }
 
@@ -228,6 +237,7 @@ func (h *ChatHandler) handleWithRetry(
 		if resp, err := h.tryTarget(ctx, req, target); err == nil {
 			return resp, nil
 		}
+		log.Printf("[WARN] Selected target %s/%s failed: %v", target.Provider, target.Model, err)
 		lastErr = err
 	}
 
@@ -238,6 +248,7 @@ func (h *ChatHandler) handleWithRetry(
 		if err == nil {
 			return resp, nil
 		}
+		log.Printf("[WARN] Target %s/%s failed: %v", target.Provider, target.Model, err)
 
 		// 处理错误
 		if errors.IsRateLimitError(err) {

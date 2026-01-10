@@ -3,6 +3,8 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/openmux/openmux/internal/balancer"
@@ -59,8 +61,13 @@ func (h *RerankHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.handleWithRetry(r.Context(), &req, targetSelector)
 	if err != nil {
+		log.Printf("[ERROR] Rerank failed: %v", err)
 		if e, ok := err.(*errors.Error); ok {
-			writeError(w, http.StatusInternalServerError, string(e.Code), e.Message)
+			msg := e.Message
+			if e.Err != nil {
+				msg = fmt.Sprintf("%s: %v", e.Message, e.Err)
+			}
+			writeError(w, http.StatusInternalServerError, string(e.Code), msg)
 		} else {
 			writeError(w, http.StatusInternalServerError, "provider_error", err.Error())
 		}
@@ -83,6 +90,7 @@ func (h *RerankHandler) handleWithRetry(
 		if resp, err := h.tryTarget(ctx, req, target); err == nil {
 			return resp, nil
 		}
+		log.Printf("[WARN] Selected target %s/%s failed: %v", target.Provider, target.Model, err)
 		lastErr = err
 	}
 
@@ -92,6 +100,7 @@ func (h *RerankHandler) handleWithRetry(
 		if err == nil {
 			return resp, nil
 		}
+		log.Printf("[WARN] Target %s/%s failed: %v", target.Provider, target.Model, err)
 
 		if errors.IsRateLimitError(err) {
 			lastErr = err

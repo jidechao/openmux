@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/openai/openai-go"
@@ -13,6 +12,7 @@ import (
 	"github.com/openmux/openmux/internal/provider"
 	"github.com/openmux/openmux/internal/router"
 	"github.com/openmux/openmux/pkg/errors"
+	"github.com/openmux/openmux/pkg/logger"
 	pkgopenai "github.com/openmux/openmux/pkg/openai"
 	"github.com/openmux/openmux/pkg/tokenizer"
 )
@@ -53,7 +53,7 @@ func (h *ChatHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	// DEBUG: Log tools and tool_choice
 	if len(req.Tools) > 0 || req.ToolChoice != nil {
-		log.Printf("[DEBUG] Request contains Tools: %d, ToolChoice: %v", len(req.Tools), req.ToolChoice)
+		logger.Debugf("Request contains Tools: %d, ToolChoice: %v", len(req.Tools), req.ToolChoice)
 		// Option to log full tools content if needed, but count is good start
 	}
 
@@ -85,7 +85,7 @@ func (h *ChatHandler) handleNonStream(
 ) {
 	resp, err := h.handleWithRetry(r.Context(), req, targetSelector)
 	if err != nil {
-		log.Printf("[ERROR] Chat completion failed: %v", err)
+		logger.Errorf("Chat completion failed: %v", err)
 		if e, ok := err.(*errors.Error); ok {
 			msg := e.Message
 			if e.Err != nil {
@@ -130,7 +130,7 @@ func (h *ChatHandler) handleStream(
 		if err := h.tryStreamTarget(w, r, req, flusher, target); err == nil {
 			return
 		}
-		log.Printf("[WARN] Stream target %s/%s failed: %v", target.Provider, target.Model, err)
+		logger.Warnf("Stream target %s/%s failed: %v", target.Provider, target.Model, err)
 		lastErr = err
 	}
 
@@ -139,12 +139,12 @@ func (h *ChatHandler) handleStream(
 		if err := h.tryStreamTarget(w, r, req, flusher, &target); err == nil {
 			return
 		}
-		log.Printf("[WARN] Stream target %s/%s failed: %v", target.Provider, target.Model, err)
+		logger.Warnf("Stream target %s/%s failed: %v", target.Provider, target.Model, err)
 		lastErr = err
 	}
 
 	// 所有 target 都失败
-	log.Printf("[ERROR] All stream targets failed: %v", lastErr)
+	logger.Errorf("All stream targets failed: %v", lastErr)
 	writeSSEError(w, flusher, "provider_error", fmt.Sprintf("All targets failed: %v", lastErr))
 }
 
@@ -211,7 +211,7 @@ func (h *ChatHandler) forwardStream(w http.ResponseWriter, flusher http.Flusher,
 
 		// DEBUG: Log if chunk has tool calls
 		if len(chunk.Choices) > 0 && len(chunk.Choices[0].Delta.ToolCalls) > 0 {
-			log.Printf("[DEBUG] Stream chunk contains ToolCalls: %d", len(chunk.Choices[0].Delta.ToolCalls))
+			logger.Debugf("Stream chunk contains ToolCalls: %d", len(chunk.Choices[0].Delta.ToolCalls))
 		}
 
 		data, err := json.Marshal(chunk)
@@ -248,7 +248,7 @@ func (h *ChatHandler) handleWithRetry(
 		if resp, err := h.tryTarget(ctx, req, target); err == nil {
 			return resp, nil
 		}
-		log.Printf("[WARN] Selected target %s/%s failed: %v", target.Provider, target.Model, err)
+		logger.Warnf("Selected target %s/%s failed: %v", target.Provider, target.Model, err)
 		lastErr = err
 	}
 
@@ -259,7 +259,7 @@ func (h *ChatHandler) handleWithRetry(
 		if err == nil {
 			return resp, nil
 		}
-		log.Printf("[WARN] Target %s/%s failed: %v", target.Provider, target.Model, err)
+		logger.Warnf("Target %s/%s failed: %v", target.Provider, target.Model, err)
 
 		// 处理错误
 		if errors.IsRateLimitError(err) {

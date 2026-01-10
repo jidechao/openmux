@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/openmux/openmux/internal/balancer"
@@ -12,6 +11,7 @@ import (
 	"github.com/openmux/openmux/internal/provider"
 	"github.com/openmux/openmux/internal/router"
 	"github.com/openmux/openmux/pkg/errors"
+	"github.com/openmux/openmux/pkg/logger"
 	pkgopenai "github.com/openmux/openmux/pkg/openai"
 	"github.com/openmux/openmux/pkg/tokenizer"
 )
@@ -61,7 +61,7 @@ func (h *RerankHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.handleWithRetry(r.Context(), &req, targetSelector)
 	if err != nil {
-		log.Printf("[ERROR] Rerank failed: %v", err)
+		logger.Errorf("Rerank failed: %v", err)
 		if e, ok := err.(*errors.Error); ok {
 			msg := e.Message
 			if e.Err != nil {
@@ -90,7 +90,7 @@ func (h *RerankHandler) handleWithRetry(
 		if resp, err := h.tryTarget(ctx, req, target); err == nil {
 			return resp, nil
 		}
-		log.Printf("[WARN] Selected target %s/%s failed: %v", target.Provider, target.Model, err)
+		logger.Warnf("Selected target %s/%s failed: %v", target.Provider, target.Model, err)
 		lastErr = err
 	}
 
@@ -100,7 +100,7 @@ func (h *RerankHandler) handleWithRetry(
 		if err == nil {
 			return resp, nil
 		}
-		log.Printf("[WARN] Target %s/%s failed: %v", target.Provider, target.Model, err)
+		logger.Warnf("Target %s/%s failed: %v", target.Provider, target.Model, err)
 
 		if errors.IsRateLimitError(err) {
 			lastErr = err

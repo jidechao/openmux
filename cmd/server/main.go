@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +17,7 @@ import (
 	"github.com/openmux/openmux/internal/middleware"
 	"github.com/openmux/openmux/internal/provider"
 	"github.com/openmux/openmux/internal/router"
+	"github.com/openmux/openmux/pkg/logger"
 )
 
 func main() {
@@ -27,23 +27,26 @@ func main() {
 	// 加载配置
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logger.Fatalf("Failed to load config: %v", err)
 	}
 
-	log.Printf("Starting OpenMux server on %s:%d", cfg.Server.Host, cfg.Server.Port)
+	// 设置日志级别
+	logger.SetLevel(cfg.Monitoring.LogLevel)
+
+	logger.Infof("Starting OpenMux server on %s:%d", cfg.Server.Host, cfg.Server.Port)
 
 	// Log active providers
-	log.Println("Active Providers:")
+	logger.Infof("Active Providers:")
 	for name, p := range cfg.Providers {
-		log.Printf("- %s (Type: %s, BaseURL: %s, Keys: %d)", name, p.Type, p.BaseURL, len(p.APIKeys))
+		logger.Infof("- %s (Type: %s, BaseURL: %s, Keys: %d)", name, p.Type, p.BaseURL, len(p.APIKeys))
 	}
 
 	// Log configured model routes
-	log.Println("Configured Model Routes:")
+	logger.Infof("Configured Model Routes:")
 	for name, route := range cfg.ModelRoutes {
-		log.Printf("- %s: %d targets (Strategy: %s)", name, len(route.Targets), route.Strategy)
+		logger.Infof("- %s: %d targets (Strategy: %s)", name, len(route.Targets), route.Strategy)
 		for _, t := range route.Targets {
-			log.Printf("  -> %s/%s (Weight: %d)", t.Provider, t.Model, t.Weight)
+			logger.Infof("  -> %s/%s (Weight: %d)", t.Provider, t.Model, t.Weight)
 		}
 	}
 
@@ -134,9 +137,9 @@ func main() {
 
 	// 启动服务器
 	go func() {
-		log.Printf("Server listening on %s", server.Addr)
+		logger.Infof("Server listening on %s", server.Addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			logger.Fatalf("Server error: %v", err)
 		}
 	}()
 
@@ -145,13 +148,13 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	logger.Println("Shutting down server...")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		logger.Fatalf("Server forced to shutdown: %v", err)
 	}
 
-	log.Println("Server exited")
+	logger.Println("Server exited")
 }

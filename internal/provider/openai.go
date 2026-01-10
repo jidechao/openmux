@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
 	"github.com/openmux/openmux/pkg/errors"
+	"github.com/openmux/openmux/pkg/logger"
 	pkgopenai "github.com/openmux/openmux/pkg/openai"
 )
 
@@ -66,7 +66,7 @@ func (p *OpenAIProvider) ChatCompletion(
 	}
 
 	if len(resp.Choices) > 0 {
-		log.Printf("[DEBUG] Response Choice 0: FinishReason=%s, ToolCalls=%d", 
+		logger.Debugf("Response Choice 0: FinishReason=%s, ToolCalls=%d", 
 			resp.Choices[0].FinishReason, len(resp.Choices[0].Message.ToolCalls))
 	}
 
@@ -176,7 +176,7 @@ func (p *OpenAIProvider) Rerank(
 
 // convertRequest 将 DTO 转换为 SDK 参数
 func (p *OpenAIProvider) convertRequest(req *pkgopenai.ChatCompletionRequest, model string) (openai.ChatCompletionNewParams, error) {
-	log.Printf("[DEBUG] convertRequest incoming: Model=%s, Tools=%d, ToolChoice=%v", model, len(req.Tools), req.ToolChoice)
+	logger.Debugf("convertRequest incoming: Model=%s, Tools=%d, ToolChoice=%v", model, len(req.Tools), req.ToolChoice)
 
 	// 使用 JSON 转换来实现真正的“透传”效果，避免手动映射漏掉字段
 	data, err := json.Marshal(req)

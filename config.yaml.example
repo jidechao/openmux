@@ -99,10 +99,6 @@ model_routes:
         weight: 1
     strategy: weighted_round_robin
 
-
-
-
-
 # 监控配置
 monitoring:
   enabled: true

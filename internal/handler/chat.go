@@ -51,6 +51,12 @@ func (h *ChatHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// DEBUG: Log tools and tool_choice
+	if len(req.Tools) > 0 || req.ToolChoice != nil {
+		log.Printf("[DEBUG] Request contains Tools: %d, ToolChoice: %v", len(req.Tools), req.ToolChoice)
+		// Option to log full tools content if needed, but count is good start
+	}
+
 	// 路由模型
 	targetSelector, err := h.router.Route(req.Model)
 	if err != nil {

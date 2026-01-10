@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/shared"
 	"github.com/openmux/openmux/pkg/errors"
 	pkgopenai "github.com/openmux/openmux/pkg/openai"
 )
@@ -61,6 +63,11 @@ func (p *OpenAIProvider) ChatCompletion(
 	resp, err := client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return nil, p.handleError(err)
+	}
+
+	if len(resp.Choices) > 0 {
+		log.Printf("[DEBUG] Response Choice 0: FinishReason=%s, ToolCalls=%d", 
+			resp.Choices[0].FinishReason, len(resp.Choices[0].Message.ToolCalls))
 	}
 
 	return resp, nil
@@ -169,52 +176,22 @@ func (p *OpenAIProvider) Rerank(
 
 // convertRequest 将 DTO 转换为 SDK 参数
 func (p *OpenAIProvider) convertRequest(req *pkgopenai.ChatCompletionRequest, model string) (openai.ChatCompletionNewParams, error) {
-	params := openai.ChatCompletionNewParams{
-		Model: model,
+	log.Printf("[DEBUG] convertRequest incoming: Model=%s, Tools=%d, ToolChoice=%v", model, len(req.Tools), req.ToolChoice)
+
+	// 使用 JSON 转换来实现真正的“透传”效果，避免手动映射漏掉字段
+	data, err := json.Marshal(req)
+	if err != nil {
+		return openai.ChatCompletionNewParams{}, err
 	}
 
-	// 转换 Messages
-	var messages []openai.ChatCompletionMessageParamUnion
-	for _, msg := range req.Messages {
-		switch msg.Role {
-		case "system":
-			messages = append(messages, openai.SystemMessage(msg.Content))
-		case "user":
-			messages = append(messages, openai.UserMessage(msg.Content))
-		case "assistant":
-			messages = append(messages, openai.AssistantMessage(msg.Content))
-		// 工具调用暂时简化处理，避免编译错误
-		case "tool":
-			messages = append(messages, openai.ToolMessage(msg.ToolCallID, msg.Content))
-		default:
-			messages = append(messages, openai.UserMessage(msg.Content))
-		}
+	var params openai.ChatCompletionNewParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return openai.ChatCompletionNewParams{}, err
 	}
-	params.Messages = messages
 
-	// 可选参数
-	if req.Temperature != nil {
-		params.Temperature = openai.Float(float64(*req.Temperature))
-	}
-	if req.TopP != nil {
-		params.TopP = openai.Float(float64(*req.TopP))
-	}
-	if req.MaxTokens != nil {
-		params.MaxTokens = openai.Int(int64(*req.MaxTokens))
-	}
-	if req.N != nil {
-		params.N = openai.Int(int64(*req.N))
-	}
-	if req.PresencePenalty != nil {
-		params.PresencePenalty = openai.Float(float64(*req.PresencePenalty))
-	}
-	if req.FrequencyPenalty != nil {
-		params.FrequencyPenalty = openai.Float(float64(*req.FrequencyPenalty))
-	}
-	if req.User != "" {
-		params.User = openai.String(req.User)
-	}
-	
+	// 覆盖模型名称为路由指定的目标模型
+	params.Model = shared.ChatModel(model)
+
 	return params, nil
 }
 

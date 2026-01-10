@@ -52,10 +52,10 @@ OpenMux 提供两种核心的请求模式：“默认直通”和“高级路由
 
 ### 模式一：默认直通 (Default Passthrough)
 
-这是最简单、开箱即用的模式。您无需配置任何路由，可以直接像使用 LiteLLM 一样，通过 `provider_name/model_name` 的格式来请求模型。
+这是最简单、开箱即用的模式。您无需配置任何路由，可以直接像使用 LiteLLM 一样，通过 `provider_name/model_name` 或 `provider_name:model_name` 的格式来请求模型。
 
 例如，要请求 `zhipu` 提供商的 `glm-4-flash` 模型，只需在 API 请求中指定：
-`"model": "zhipu/glm-4-flash"`
+`"model": "zhipu/glm-4-flash"` 或 `"model": "zhipu:glm-4-flash"`
 
 #### Provider 内部的 API Key 轮询
 

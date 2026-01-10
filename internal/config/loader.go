@@ -88,9 +88,16 @@ func validate(cfg *Config) error {
 	return nil
 }
 
-// ParseProviderModel 解析 provider/model 格式
+// ParseProviderModel 解析 provider/model 或 provider:model 格式
 func ParseProviderModel(modelName string) (provider, model string, ok bool) {
-	parts := strings.SplitN(modelName, "/", 2)
+	// 优先尝试冒号分隔
+	parts := strings.SplitN(modelName, ":", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1], true
+	}
+
+	// 然后尝试斜杠分隔
+	parts = strings.SplitN(modelName, "/", 2)
 	if len(parts) == 2 {
 		return parts[0], parts[1], true
 	}

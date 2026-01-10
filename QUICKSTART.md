@@ -62,7 +62,7 @@ curl http://localhost:8080/v1/chat/completions \
 ```bash
 curl http://localhost:8080/v1/embeddings \
   -H "Content-Type: application/json" \
-  -d '{ "model": "zhipu/embedding-3", "input": "hello" }'
+  -d '{ `"model": "zhipu/embedding-3"` (或者 `"zhipu:embedding-3"`), "input": "hello" }'
 ```
 
 ## 5. 使用 Docker (推荐)

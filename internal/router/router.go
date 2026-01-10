@@ -212,9 +212,16 @@ func (r *Router) RouteTargets(modelName string) ([]config.Target, error) {
 	return selector.GetAll(), nil
 }
 
-// parseProviderModel 解析 provider/model 格式
+// parseProviderModel 解析 provider/model 或 provider:model 格式
 func parseProviderModel(modelName string) (provider, model string, ok bool) {
-	parts := strings.SplitN(modelName, "/", 2)
+	// 尝试解析 provider:model
+	parts := strings.SplitN(modelName, ":", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1], true
+	}
+	
+	// 尝试解析 provider/model
+	parts = strings.SplitN(modelName, "/", 2)
 	if len(parts) == 2 {
 		return parts[0], parts[1], true
 	}

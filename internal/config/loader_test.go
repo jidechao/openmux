@@ -82,6 +82,8 @@ func TestParseProviderModel(t *testing.T) {
 	}{
 		{"zhipu/glm-4-flash", "zhipu", "glm-4-flash", true},
 		{"aliyun/qwen-turbo", "aliyun", "qwen-turbo", true},
+		{"openai:gpt-4", "openai", "gpt-4", true},
+		{"azure:gpt-3.5-turbo", "azure", "gpt-3.5-turbo", true},
 		{"simple-model", "", "", false},
 	}
 

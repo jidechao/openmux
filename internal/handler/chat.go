@@ -209,6 +209,11 @@ func (h *ChatHandler) forwardStream(w http.ResponseWriter, flusher http.Flusher,
 			totalUsage = int(chunk.Usage.TotalTokens)
 		}
 
+		// DEBUG: Log if chunk has tool calls
+		if len(chunk.Choices) > 0 && len(chunk.Choices[0].Delta.ToolCalls) > 0 {
+			log.Printf("[DEBUG] Stream chunk contains ToolCalls: %d", len(chunk.Choices[0].Delta.ToolCalls))
+		}
+
 		data, err := json.Marshal(chunk)
 		if err != nil {
 			continue

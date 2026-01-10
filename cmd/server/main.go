@@ -32,6 +32,21 @@ func main() {
 
 	log.Printf("Starting OpenMux server on %s:%d", cfg.Server.Host, cfg.Server.Port)
 
+	// Log active providers
+	log.Println("Active Providers:")
+	for name, p := range cfg.Providers {
+		log.Printf("- %s (Type: %s, BaseURL: %s, Keys: %d)", name, p.Type, p.BaseURL, len(p.APIKeys))
+	}
+
+	// Log configured model routes
+	log.Println("Configured Model Routes:")
+	for name, route := range cfg.ModelRoutes {
+		log.Printf("- %s: %d targets (Strategy: %s)", name, len(route.Targets), route.Strategy)
+		for _, t := range route.Targets {
+			log.Printf("  -> %s/%s (Weight: %d)", t.Provider, t.Model, t.Weight)
+		}
+	}
+
 	// 初始化组件
 	providerPool := provider.InitFromConfig(cfg)
 	balancerPool := balancer.InitFromConfig(cfg)

@@ -3,6 +3,7 @@ package balancer
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/openmux/openmux/internal/config"
 	"github.com/openmux/openmux/internal/ratelimit"
@@ -20,7 +21,7 @@ type WeightedRoundRobin struct {
 }
 
 // NewWeightedRoundRobin 创建加权轮询负载均衡器
-func NewWeightedRoundRobin(provider string, apiKeys []string, rateLimit config.RateLimit) *WeightedRoundRobin {
+func NewWeightedRoundRobin(provider string, apiKeys []string, rateLimit config.RateLimit, healthCheck config.HealthCheckConfig) *WeightedRoundRobin {
 	backends := make([]*Backend, 0, len(apiKeys))
 	weights := make([]int, 0, len(apiKeys))
 	
@@ -44,13 +45,18 @@ func NewWeightedRoundRobin(provider string, apiKeys []string, rateLimit config.R
 	gcd := gcdSlice(weights)
 	maxWeight := maxSlice(weights)
 	
-	return &WeightedRoundRobin{
+	w := &WeightedRoundRobin{
 		backends:      backends,
 		current:       -1,
 		gcd:           gcd,
 		maxWeight:     maxWeight,
 		currentWeight: 0,
 	}
+
+	// 总是启动健康检查（自动恢复），如果没有配置则使用默认值
+	w.startHealthCheck(healthCheck)
+
+	return w
 }
 
 // Select 选择一个后端
@@ -92,6 +98,7 @@ func (w *WeightedRoundRobin) MarkUnhealthy(backend *Backend) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	backend.Healthy = false
+	backend.LastFailure = time.Now()
 }
 
 // MarkHealthy 标记后端健康
@@ -175,6 +182,32 @@ func (p *BalancerPool) Get(provider string) (Balancer, error) {
 	return balancer, nil
 }
 
+// startHealthCheck 启动健康检查
+func (w *WeightedRoundRobin) startHealthCheck(cfg config.HealthCheckConfig) {
+	interval := cfg.Interval
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+
+	ticker := time.NewTicker(interval)
+	go func() {
+		for range ticker.C {
+			w.mu.Lock()
+			for _, backend := range w.backends {
+				if !backend.Healthy {
+					// 简单的基于时间的恢复策略
+					// 如果后端不健康的时间超过了检测间隔，尝试恢复
+					if time.Since(backend.LastFailure) >= interval {
+						backend.Healthy = true
+						backend.ResetFailCount()
+					}
+				}
+			}
+			w.mu.Unlock()
+		}
+	}()
+}
+
 // InitFromConfig 从配置初始化负载均衡器池
 func InitFromConfig(cfg *config.Config) *BalancerPool {
 	pool := NewBalancerPool()
@@ -182,10 +215,12 @@ func InitFromConfig(cfg *config.Config) *BalancerPool {
 	for name, providerCfg := range cfg.Providers {
 		var balancer Balancer
 		var strategy string
+		var healthCheck config.HealthCheckConfig
 
 		// 检查 per-provider 的负载均衡配置
 		if providerCfg.LoadBalancer != nil {
 			strategy = providerCfg.LoadBalancer.Strategy
+			healthCheck = providerCfg.LoadBalancer.HealthCheck
 		}
 
 		// 如果未配置或为空，则使用默认策略
@@ -195,10 +230,10 @@ func InitFromConfig(cfg *config.Config) *BalancerPool {
 
 		switch strategy {
 		case "weighted_round_robin":
-			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys, providerCfg.RateLimit)
+			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys, providerCfg.RateLimit, healthCheck)
 		default:
 			// 默认回退到 weighted_round_robin
-			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys, providerCfg.RateLimit)
+			balancer = NewWeightedRoundRobin(name, providerCfg.APIKeys, providerCfg.RateLimit, healthCheck)
 		}
 
 		pool.Register(name, balancer)

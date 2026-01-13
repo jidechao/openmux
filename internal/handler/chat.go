@@ -176,7 +176,9 @@ func (h *ChatHandler) tryStreamTarget(
 
 	streamResp, err := prov.ChatCompletionStream(r.Context(), req, target.Model, backend.APIKey)
 	if err != nil {
-		h.markBackendUnhealthy(target.Provider, backend)
+		if errors.IsRateLimitError(err) {
+			h.markBackendUnhealthy(target.Provider, backend)
+		}
 		return err
 	}
 

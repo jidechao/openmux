@@ -2,6 +2,7 @@ package balancer
 
 import (
 	"sync/atomic"
+	"time"
 
 	"github.com/openmux/openmux/internal/config"
 	"github.com/openmux/openmux/internal/ratelimit"
@@ -17,6 +18,7 @@ type Backend struct {
 	Healthy     bool
 	ActiveConns int32
 	FailCount   int32
+	LastFailure time.Time
 }
 
 // Balancer 负载均衡器接口

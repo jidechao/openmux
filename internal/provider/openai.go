@@ -250,6 +250,12 @@ func (p *OpenAIProvider) convertEmbeddingRequest(req *pkgopenai.EmbeddingRequest
 func (p *OpenAIProvider) handleError(err error) error {
 	// SDK 错误通常是 *openai.Error
 	if apiErr, ok := err.(*openai.Error); ok {
+		if apiErr.StatusCode == 429 {
+			return errors.New(errors.ErrCodeRateLimitExceeded, apiErr.Message)
+		}
+		if apiErr.StatusCode == 401 {
+			return errors.New(errors.ErrCodeInvalidAPIKey, apiErr.Message)
+		}
 		return errors.New(errors.ErrCodeProviderError, apiErr.Message)
 	}
 	return errors.Wrap(errors.ErrCodeProviderError, "provider error", err)
